@@ -20,7 +20,7 @@ TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 
 # --- 新增：取得今日日期變數 ---
 today_str = datetime.now().strftime("%Y-%m-%d")
-TIMEOUT_SECONDS = 10
+TIMEOUT_SECONDS = 15 * 60
 
 # =========================
 # 0.1) 密碼保護檢查 (支援多組密碼)
@@ -529,8 +529,8 @@ def render_dashboard():
     st.markdown(f"""
     <div style="background:linear-gradient(135deg, #6f2dbd, #8b2fc9); border-radius:16px; padding:30px; color:white; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center;">
         <div>
-            <h1 style="margin:0; font-size:24px; color:white;">早安，管理員！ 👋</h1>
-            <p style="opacity:0.9; margin-top:5px;">📅 今日日期：{today_str} | Notion 連線狀態：正常</p>
+            <h1 style="margin:0; font-size:24px; color:white;">歡迎~LJOU！ 👋</h1>
+            <p style="opacity:0.9; margin-top:5px;">📅 今日日期：{today_str} </p>
         </div>
         <div style="text-align:right;"><div style="font-size:32px; font-weight:800;">{reading}</div><div style="font-size:13px; opacity:0.8;">正在閱讀</div></div>
     </div>
