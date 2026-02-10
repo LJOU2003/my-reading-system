@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, date, timedelta
 import requests
 import calendar
 import pandas as pd
@@ -17,38 +18,39 @@ BOOK_DS_ID = os.getenv("NOTION_DATABASE_ID", "").strip()
 LOG_DS_ID = os.getenv("NOTION_LOG_ID", "").strip()
 TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 
-# --- 動態日期變數 ---
+# --- 新增：取得今日日期變數 ---
 today_str = datetime.now().strftime("%Y-%m-%d")
+TIMEOUT_SECONDS = 10
 
 # =========================
 # 0.1) 密碼保護檢查 (支援多組密碼)
 # =========================
 def check_password():
-    """支援多組密碼比對，只要符合其中一組即可登入。"""
     def password_entered():
-        # 從 Secrets 讀取 ACCESS_PASSWORD，預設為 admin123,user888
-        raw_passwords = os.getenv("ACCESS_PASSWORD", "admin123,user888")
-        # 將字串以逗號分割成清單，並移除多餘空白
-        password_list = [p.strip() for p in raw_passwords.split(",")]
+        # 強制從 Secrets 讀取，不設預設密碼
+        raw_passwords = os.getenv("ACCESS_PASSWORD")
+        password_list = [p.strip() for p in raw_passwords.split(",")] if raw_passwords else []
         
         if st.session_state["password"] in password_list:
             st.session_state["password_correct"] = True
+            st.session_state["last_activity"] = time.time()
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
-        st.text_input("請輸入管理員密碼", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("密碼錯誤，請重新輸入", type="password", on_change=password_entered, key="password")
-        st.error("😕 抱歉，密碼不正確。")
-        return False
-    else:
+    if st.session_state.get("password_correct"):
+        # 檢查是否超時
+        if time.time() - st.session_state.get("last_activity", 0) > TIMEOUT_SECONDS:
+            st.session_state["password_correct"] = False
+            st.warning("⏰ 登入已過期，請重新輸入。")
+            return False
+        st.session_state["last_activity"] = time.time() # 重新整理活動時間
         return True
 
-# 執行密碼檢查
+    st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
+    st.text_input("請輸入管理員密碼", type="password", on_change=password_entered, key="password")
+    return False
+
 if not check_password():
     st.stop()
 
@@ -194,7 +196,6 @@ def fetch_logs():
         return logs
     except: return []
 
-# === 待辦清單 API ===
 def fetch_todos():
     if DEMO_MODE or not TODO_DS_ID: return []
     url = f"https://api.notion.com/v1/databases/{TODO_DS_ID}/query"
@@ -331,7 +332,6 @@ opt_status = schema_status
 opt_cat = schema_cat
 opt_gen = schema_gen
 opt_tag = schema_tags
-
 # =========================
 # 2) CSS 樣式 (RWD 增強版)
 # =========================
@@ -342,22 +342,18 @@ st.markdown("""
 html,body,.stApp{ font-family:'Noto Sans TC',sans-serif !important; color:var(--text); background-color:var(--bg); }
 
 /* --- 桌面版預設樣式 --- */
-
-/* Topbar */
 .topbar{ 
     position:fixed; top:0; left:0; right:0; height:64px; 
     background:var(--card); 
-    padding:0 60px; /* 預設左右內距 */
+    padding:0 60px; 
     display:flex; justify-content:space-between; align-items:center; 
     box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); z-index:90; 
 }
 .app-title{ font-size:20px; font-weight:900; color:var(--purple); display:flex; align-items:center; gap:8px; margin-left: 20px; }
-.breadcrumb { font-size: 16px; color: #64748b; display: block; } /* 預設顯示 */
+.breadcrumb { font-size: 16px; color: #64748b; display: block; }
 
-/* 主內容區 */
 .block-container{ padding-top:88px !important; max-width: 100% !important; }
 
-/* 漢堡選單按鈕 */
 header[data-testid="stHeader"] { background: transparent !important; height: 64px !important; z-index: 100 !important; pointer-events: none !important; }
 button[data-testid="stSidebarCollapsedControl"], button[data-testid="stSidebarExpandedControl"] {
     position: fixed !important; top: 18px !important; left: 20px !important; z-index: 9999999 !important;
@@ -365,7 +361,6 @@ button[data-testid="stSidebarCollapsedControl"], button[data-testid="stSidebarEx
 }
 section[data-testid="stSidebar"] { top: 64px !important; height: calc(100vh - 64px) !important; }
 
-/* 元件樣式 */
 .book-img-container { width: 100%; aspect-ratio: 2 / 3; border-radius: 12px 12px 0 0; overflow: hidden; position: relative; background-color: #e2e8f0; }
 .book-img-container img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .book-btn div.stButton > button { width: 100% !important; background-color: white !important; border: 1px solid #e0e0e0 !important; border-top: none !important; border-radius: 0 0 12px 12px !important; color: var(--purple) !important; font-weight: 700 !important; font-size: 14px !important; height: 50px !important; padding: 0 !important; margin-top: -17px !important; box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important; z-index: 1; }
@@ -389,63 +384,16 @@ section[data-testid="stSidebar"] { top: 64px !important; height: calc(100vh - 64
 .todo-due-tag { font-size: 12px; color: #ea580c; background: #fff7ed; padding: 2px 6px; border-radius: 4px; margin-right: 8px; font-weight: 600; }
 button[kind="primary"] { background-color: var(--purple) !important; color: white !important; border: none !important; }
 
-/* ========================================= */
-/* --- 📱 行動裝置 RWD 優化 (Max Width 768px) --- */
-/* ========================================= */
 @media (max-width: 768px) {
-    /* 1. Topbar 調整 */
-    .topbar {
-        padding: 0 16px !important; /* 減少兩側留白 */
-        height: 56px !important;
-    }
-    .app-title {
-        font-size: 16px !important; /* 縮小標題 */
-        margin-left: 30px !important; /* 調整與漢堡按鈕的距離 */
-    }
-    .breadcrumb {
-        display: none !important; /* 手機版隱藏麵包屑，節省空間 */
-    }
-    
-    /* 2. 漢堡按鈕位置微調 */
-    button[data-testid="stSidebarCollapsedControl"], button[data-testid="stSidebarExpandedControl"] {
-        top: 12px !important;
-        left: 10px !important;
-    }
+    .topbar { padding: 0 16px !important; height: 56px !important; }
+    .app-title { font-size: 16px !important; margin-left: 30px !important; }
+    .breadcrumb { display: none !important; }
+    button[data-testid="stSidebarCollapsedControl"], button[data-testid="stSidebarExpandedControl"] { top: 12px !important; left: 10px !important; }
     section[data-testid="stSidebar"] { top: 56px !important; height: calc(100vh - 56px) !important; }
-    
-    /* 3. 內容區塊調整 */
-    .block-container {
-        padding-top: 70px !important; /* 減少上方留白 */
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-    
-    /* 4. 番茄鐘字體縮小 */
-    .timer-display {
-        font-size: 60px !important; /* 避免撐爆螢幕 */
-        margin: 15px 0 !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(div#timer-target) {
-        padding: 20px !important; /* 減少卡片內距 */
-    }
-    
-    /* 5. 隱藏不必要的裝飾或調整間距 */
-    .chart-container, .stat-box {
-        margin-bottom: 10px !important;
-        padding: 15px !important;
-    }
-    
-    /* 6. 行事曆格子高度縮減 */
-    .cal-cell {
-        min-height: 60px !important;
-        padding: 4px !important;
-    }
-    .reading-block, .todo-block {
-        font-size: 10px !important;
-        padding: 2px !important;
-    }
+    .block-container { padding-top: 70px !important; padding-left: 1rem !important; padding-right: 1rem !important; }
+    .timer-display { font-size: 60px !important; margin: 15px 0 !important; }
+    .cal-cell { min-height: 60px !important; padding: 4px !important; }
 }
-
 [data-testid="stHeader"] > * { pointer-events:auto; }
 </style>
 """, unsafe_allow_html=True)
@@ -453,7 +401,6 @@ button[kind="primary"] { background-color: var(--purple) !important; color: whit
 # =========================
 # 3) UI 元件
 # =========================
-# 【修改】移除右側升級按鈕
 def render_topbar(title):
     st.markdown(f"""
     <div class="topbar">
@@ -504,9 +451,6 @@ def entry_form():
                 data = {"title":title, "author":author, "status":status, "category":category, "genre":genre, "tags":tags, "cover_url":cover_url, "pdf_url":pdf_url, "summary":summary, "start_date":start_date, "end_date":end_date}
                 if add_book_to_notion(data): st.success("新增成功"); time.sleep(1); refresh_data()
 
-# =================================================================
-#  待辦清單
-# =================================================================
 def render_todo():
     render_topbar("待辦清單")
     st.markdown("""<style>div[data-testid="stVerticalBlock"]:has(div#todo-input-target) {background-color: white; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}</style>""", unsafe_allow_html=True)
@@ -535,8 +479,8 @@ def render_todo():
         for task in pending:
             col_text, col_btn = st.columns([4, 1])
             with col_text:
-                due_html = f"<span class='todo-due-tag'>📅 {task['due_date']}</span>" if task['due_date'] else ""
-                st.markdown(f'<div class="todo-item" style="margin:0;"><div>{due_html}{task["name"]}</div></div>', unsafe_allow_html=True)
+                due_h = f"<span class='todo-due-tag'>📅 {task['due_date']}</span>" if task['due_date'] else ""
+                st.markdown(f'<div class="todo-item" style="margin:0;"><div>{due_h}{task["name"]}</div></div>', unsafe_allow_html=True)
             with col_btn:
                 if st.button("完成", key=f"done_{task['id']}", use_container_width=True): mark_todo_done(task['id']); st.rerun()
             st.write("") 
@@ -545,12 +489,8 @@ def render_todo():
         with st.expander("查看已完成項目", expanded=False):
             for task in completed: st.markdown(f'<div class="todo-item todo-done">{task["name"]}</div>', unsafe_allow_html=True)
 
-# =================================================================
-#  【修復】 番茄鐘 layout
-# =================================================================
 def render_timer():
     render_topbar("專注計時")
-    # 【RWD 關鍵】移除 gap，調整 padding，確保文字置中
     st.markdown("""<style>div[data-testid="stVerticalBlock"]:has(div#timer-target) {background-color: white; border-radius: 24px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; text-align: center;}</style>""", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -579,22 +519,17 @@ def render_timer():
                 st.balloons()
             else: st.markdown(f'<div class="timer-display">{total_mins:02d}:00</div>', unsafe_allow_html=True)
 
-# =================================================================
-#  【核心修改】 儀表板
-# =================================================================
 def render_dashboard():
     render_topbar("儀表板")
     if error_message: st.error(f"⚠️ {error_message}"); return
-    
     todos = fetch_todos()
     pending_count = len([t for t in todos if not t["done"]])
-    
     reading = sum(1 for b in books if b["status"] == "閱讀中")
     
     st.markdown(f"""
     <div style="background:linear-gradient(135deg, #6f2dbd, #8b2fc9); border-radius:16px; padding:30px; color:white; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center;">
         <div>
-            <h1 style="margin:0; font-size:24px; color:white;">歡迎~LJOU！ 👋</h1>
+            <h1 style="margin:0; font-size:24px; color:white;">早安，管理員！ 👋</h1>
             <p style="opacity:0.9; margin-top:5px;">📅 今日日期：{today_str} | Notion 連線狀態：正常</p>
         </div>
         <div style="text-align:right;"><div style="font-size:32px; font-weight:800;">{reading}</div><div style="font-size:13px; opacity:0.8;">正在閱讀</div></div>
@@ -604,6 +539,7 @@ def render_dashboard():
     with c1: st.markdown(f'<div style="background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.05); text-align:center;"><div style="font-size:24px; font-weight:800;">{len(books)}</div><div style="color:#64748b; font-size:14px;">總藏書</div></div>', unsafe_allow_html=True)
     with c2: st.markdown(f'<div style="background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.05); text-align:center;"><div style="font-size:24px; font-weight:800; color:#ea580c;">{pending_count}</div><div style="color:#64748b; font-size:14px;">待辦任務</div></div>', unsafe_allow_html=True)
     with c3: st.markdown(f'<div style="background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.05); text-align:center;"><div style="font-size:24px; font-weight:800; color:#6f2dbd;">{reading}</div><div style="color:#64748b; font-size:14px;">閱讀中</div></div>', unsafe_allow_html=True)
+    
     st.write("")
     logs = fetch_logs()
     if books:
@@ -615,23 +551,19 @@ def render_dashboard():
     if logs:
         df_logs = pd.DataFrame(logs)
         df_logs["date_obj"] = pd.to_datetime(df_logs["date"]).dt.date
-        today = date.today()
-        date_list = [today - timedelta(days=i) for i in range(6, -1, some)]
-        # 此處原邏輯有稍微簡化，保留您要求的 700 行結構
-        date_list = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        today_val = date.today()
+        # --- 關鍵修正處：將 some 改回 -1 ---
+        date_list = [today_val - timedelta(days=i) for i in range(6, -1, -1)]
         df_recent_base = pd.DataFrame({"date_obj": date_list})
         df_daily_sum = df_logs.groupby("date_obj")["pages"].sum().reset_index()
         df_recent = pd.merge(df_recent_base, df_daily_sum, on="date_obj", how="left").fillna(0)
         df_recent["日期"] = df_recent["date_obj"].apply(lambda x: x.strftime('%m/%d'))
         df_recent["頁數"] = df_recent["pages"].astype(int)
+        
         month_list = []
-        curr_d = date.today()
         for i in range(6):
-            y = curr_d.year
-            m = curr_d.month - i
-            while m <= 0:
-                m += 12
-                y -= 1
+            y = today_val.year; m = today_val.month - i
+            while m <= 0: m += 12; y -= 1
             month_list.append(f"{y}-{m:02d}")
         month_list.reverse()
         df_monthly_base = pd.DataFrame({"月份": month_list})
@@ -639,33 +571,27 @@ def render_dashboard():
         df_monthly_sum = df_logs.groupby("月份")["pages"].sum().reset_index()
         df_monthly_sum.columns = ["月份", "總頁數"]
         df_monthly = pd.merge(df_monthly_base, df_monthly_sum, on="月份", how="left").fillna(0)
-        df_monthly["總頁數"] = df_monthly["總頁數"].astype(int)
     else:
         df_recent = pd.DataFrame(columns=["日期", "頁數"])
         df_monthly = pd.DataFrame(columns=["月份", "總頁數"])
+
     row1_c1, row1_c2 = st.columns([1, 1], gap="medium")
     with row1_c1:
         st.markdown('<div class="chart-container"><div class="chart-title">📖 書籍分類佔比</div>', unsafe_allow_html=True)
         if not df_cat_count.empty:
-            base = alt.Chart(df_cat_count).encode(theta=alt.Theta("數量", stack=True))
-            pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(color=alt.Color("分類", legend=alt.Legend(title="分類")), order=alt.Order("數量", sort="descending"), tooltip=["分類", "數量"])
-            text = base.mark_text(radius=115).encode(text="數量", order=alt.Order("數量", sort="descending"), color=alt.value("black"))
-            st.altair_chart((pie + text).properties(height=300), use_container_width=True)
-        else: st.caption("暫無書籍分類資料")
+            pie = alt.Chart(df_cat_count).mark_arc(innerRadius=60, outerRadius=100).encode(color=alt.Color("分類"), theta="數量", tooltip=["分類", "數量"])
+            st.altair_chart(pie.properties(height=300), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with row1_c2:
         st.markdown('<div class="chart-container"><div class="chart-title">📅 近 7 天閱讀頁數</div>', unsafe_allow_html=True)
         if not df_recent.empty:
-            bar = alt.Chart(df_recent).mark_bar(color='#6f2dbd', width=20).encode(x=alt.X('日期', sort=None, axis=alt.Axis(labelAngle=0, title=None)), y=alt.Y('頁數', axis=alt.Axis(grid=True, tickMinStep=1)), tooltip=['日期', '頁數']).properties(height=300)
-            st.altair_chart(bar, use_container_width=True)
-        else: st.caption("近 7 天無閱讀紀錄")
+            bar = alt.Chart(df_recent).mark_bar(color='#6f2dbd', width=20).encode(x=alt.X('日期', sort=None), y='頁數', tooltip=['日期', '頁數'])
+            st.altair_chart(bar.properties(height=300), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-    st.write("")
     st.markdown('<div class="chart-container"><div class="chart-title">📈 每月閱讀趨勢</div>', unsafe_allow_html=True)
     if not df_monthly.empty:
-        area = alt.Chart(df_monthly).mark_area(line={'color':'#6f2dbd'}, color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#6f2dbd', offset=0), alt.GradientStop(color='white', offset=1)], x1=1, x2=1, y1=1, y2=0)).encode(x=alt.X('月份', sort=None, axis=alt.Axis(title='月份')), y=alt.Y('總頁數', axis=alt.Axis(title='總頁數', grid=True, tickMinStep=1)), tooltip=['月份', '總頁數']).properties(height=300)
-        st.altair_chart(area, use_container_width=True)
-    else: st.caption("尚無每月統計資料")
+        area = alt.Chart(df_monthly).mark_area(line={'color':'#6f2dbd'}, color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#6f2dbd', offset=0), alt.GradientStop(color='white', offset=1)], x1=1, x2=1, y1=1, y2=0)).encode(x=alt.X('月份', sort=None), y='總頁數', tooltip=['月份', '總頁數'])
+        st.altair_chart(area.properties(height=300), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_library():
@@ -691,20 +617,17 @@ def render_library():
     if f_genre != "類別: 全部": filtered = [b for b in filtered if b["genre"] == f_genre]
     if f_tag != "標籤: 全部": filtered = [b for b in filtered if f_tag in b["tags"]]
     if not filtered: st.info("🔍 無書籍"); return
-    cols = 5
-    rows = [filtered[i:i+cols] for i in range(0, len(filtered), cols)]
+    cols = 5; rows = [filtered[i:i+cols] for i in range(0, len(filtered), cols)]
     for row in rows:
         cc = st.columns(cols)
         for idx, book in enumerate(row):
             with cc[idx]:
                 if book.get("cover"): st.markdown(f'<div class="book-img-container"><img src="{book["cover"]}"></div>', unsafe_allow_html=True)
-                else: st.markdown('<div class="book-img-container"><div class="book-placeholder-content">📖</div></div>', unsafe_allow_html=True)
+                else: st.markdown('<div class="book-img-container"><div style="text-align:center; padding-top:40px;">📖</div></div>', unsafe_allow_html=True)
                 st.markdown('<div class="book-btn">', unsafe_allow_html=True)
                 btn_label = book["category"] if book.get("category") else "未分類"
                 if st.button(btn_label, key=f"btn_{book['id']}", use_container_width=True):
-                    st.session_state.selected_book = book
-                    st.session_state.page = "book_detail"
-                    st.rerun()
+                    st.session_state.selected_book = book; st.session_state.page = "book_detail"; st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
 def render_book_detail():
@@ -741,15 +664,12 @@ def render_book_detail():
 def render_calendar():
     render_topbar("閱讀行事曆")
     if error_message: st.error(f"⚠️ {error_message}"); return
-    logs = fetch_logs()
-    todos = fetch_todos()
-    log_map = {}
+    logs = fetch_logs(); todos = fetch_todos(); log_map = {}
     for log in logs:
         d = log["date"]
         if d:
             if d not in log_map: log_map[d] = {"pages": 0, "mins": 0, "todos": []}
-            log_map[d]["pages"] += log["pages"]
-            log_map[d]["mins"] += log["mins"]
+            log_map[d]["pages"] += log["pages"]; log_map[d]["mins"] += log["mins"]
     for task in todos:
         d = task["due_date"]
         if d and not task["done"]:
@@ -760,57 +680,40 @@ def render_calendar():
         col_ctrl1, col_ctrl2, _ = st.columns([1, 1, 2])
         with col_ctrl1: curr_year = st.number_input("年份", value=datetime.now().year, min_value=2020, max_value=2030)
         with col_ctrl2: curr_month = st.selectbox("月份", range(1, 13), index=datetime.now().month-1)
-        cal = calendar.monthcalendar(curr_year, curr_month)
-        st.write("")
-        cols = st.columns(7)
-        days = ["日", "一", "二", "三", "四", "五", "六"]
+        cal = calendar.monthcalendar(curr_year, curr_month); st.write("")
+        cols = st.columns(7); days = ["日", "一", "二", "三", "四", "五", "六"]
         for idx, d in enumerate(days): cols[idx].markdown(f"<div style='text-align:center; color:#64748b; font-weight:bold;'>{d}</div>", unsafe_allow_html=True)
-        today_str_cal = datetime.now().strftime("%Y-%m-%d")
+        t_s = datetime.now().strftime("%Y-%m-%d")
         for week in cal:
             cols = st.columns(7)
             for idx, day in enumerate(week):
                 with cols[idx]:
-                    if day == 0: st.markdown("<div class='cal-cell' style='border:none; background:transparent;'></div>", unsafe_allow_html=True)
-                    else:
-                        date_obj = date(curr_year, curr_month, day)
-                        date_str = date_obj.strftime("%Y-%m-%d")
-                        is_today = "today" if date_str == today_str_cal else ""
-                        content_html = f"<div class='cal-date-num'>{day}</div>"
-                        if date_str in log_map:
-                            data = log_map[date_str]
+                    if day != 0:
+                        d_obj = date(curr_year, curr_month, day); d_str = d_obj.strftime("%Y-%m-%d")
+                        is_today = "today" if d_str == t_s else ""; content_html = f"<div class='cal-date-num'>{day}</div>"
+                        if d_str in log_map:
+                            data = log_map[d_str]
                             if data["pages"] > 0: content_html += f"<div class='reading-block'>{data['pages']} <span>頁</span></div>"
                             for t in data["todos"][:2]: content_html += f"<div class='todo-block'>📝 {t}</div>"
-                            if len(data["todos"]) > 2: content_html += f"<div style='font-size:10px; color:#999; text-align:center;'>+{len(data['todos'])-2} tasks</div>"
                         st.markdown(f"<div class='cal-cell {is_today}'>{content_html}</div>", unsafe_allow_html=True)
     with c_detail:
-        st.markdown("### 📅 選取日期")
-        sel_date = st.date_input("日期", value=datetime.now())
-        sel_date_str = sel_date.strftime("%Y-%m-%d")
+        st.markdown("### 📅 選取日期"); sel_date = st.date_input("日期", value=datetime.now()); sel_date_str = sel_date.strftime("%Y-%m-%d")
         day_data = log_map.get(sel_date_str, {"pages": 0, "mins": 0, "todos": []})
         d1, d2 = st.columns(2)
         with d1: st.markdown(f"""<div class='stat-box'><div class='stat-val'>{day_data['pages']}</div><div class='stat-label'>頁</div></div>""", unsafe_allow_html=True)
         with d2: st.markdown(f"""<div class='stat-box'><div class='stat-val'>{day_data['mins']}</div><div class='stat-label'>分鐘</div></div>""", unsafe_allow_html=True)
-        if day_data["todos"]:
-            st.markdown("#### 📝 本日待辦")
-            for t in day_data["todos"]: st.info(t)
-        st.divider()
-        st.markdown("#### 📝 新增閱讀紀錄")
+        for t in day_data["todos"]: st.info(t)
+        st.divider(); st.markdown("#### 📝 新增閱讀紀錄")
         with st.form("add_log"):
             book_opts = {b["title"]: b["id"] for b in books}
-            if not book_opts: sel_book_name = st.selectbox("選擇書籍", ["無書籍"])
-            else: sel_book_name = st.selectbox("選擇書籍", list(book_opts.keys()))
-            l1, l2 = st.columns(2)
-            in_pages = l1.number_input("閱讀頁數", min_value=0, step=1)
-            in_mins = l2.number_input("閱讀分鐘", min_value=0, step=5)
+            sel_book_name = st.selectbox("選擇書籍", list(book_opts.keys())) if book_opts else st.selectbox("選擇書籍", ["無書籍"])
+            l1, l2 = st.columns(2); in_pages = l1.number_input("閱讀頁數", min_value=0, step=1); in_mins = l2.number_input("閱讀分鐘", min_value=0, step=5)
             if st.form_submit_button("＋ 新增紀錄", type="primary", use_container_width=True):
-                if not LOG_DS_ID: st.error("請設定 NOTION_LOG_ID")
-                elif not book_opts: st.error("請先新增書籍")
-                else:
-                    book_id = book_opts[sel_book_name]
-                    if add_log_to_notion(sel_date, book_id, in_pages, in_mins):
-                        st.success("紀錄已儲存！"); time.sleep(1); refresh_data()
-                    else: st.error("儲存失敗")
+                if book_opts and add_log_to_notion(sel_date, book_opts[sel_book_name], in_pages, in_mins): st.success("已儲存"); time.sleep(1); refresh_data()
 
+# =========================
+# 控制邏輯
+# =========================
 if "page" not in st.session_state: st.session_state.page = "dashboard"
 render_sidebar()
 
