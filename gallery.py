@@ -8,6 +8,9 @@ import altair as alt
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 import streamlit as st
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 # =========================
 # 0) 基本設定
@@ -19,7 +22,7 @@ LOG_DS_ID = os.getenv("NOTION_LOG_ID", "").strip()
 TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 
 # --- 新增：取得今日日期變數 ---
-today_str = datetime.now().strftime("%Y-%m-%d")
+today_str = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d")
 TIMEOUT_SECONDS = 15 * 60
 
 # =========================
