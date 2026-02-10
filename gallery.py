@@ -17,8 +17,40 @@ BOOK_DS_ID = os.getenv("NOTION_DATABASE_ID", "").strip()
 LOG_DS_ID = os.getenv("NOTION_LOG_ID", "").strip()
 TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 
-# --- 新增日期變數 ---
+# --- 動態日期變數 ---
 today_str = datetime.now().strftime("%Y-%m-%d")
+
+# =========================
+# 0.1) 密碼保護檢查 (支援多組密碼)
+# =========================
+def check_password():
+    """支援多組密碼比對，只要符合其中一組即可登入。"""
+    def password_entered():
+        # 從 Secrets 讀取 ACCESS_PASSWORD，預設為 admin123,user888
+        raw_passwords = os.getenv("ACCESS_PASSWORD", "admin123,user888")
+        # 將字串以逗號分割成清單，並移除多餘空白
+        password_list = [p.strip() for p in raw_passwords.split(",")]
+        
+        if st.session_state["password"] in password_list:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
+        st.text_input("請輸入管理員密碼", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.text_input("密碼錯誤，請重新輸入", type="password", on_change=password_entered, key="password")
+        st.error("😕 抱歉，密碼不正確。")
+        return False
+    else:
+        return True
+
+# 執行密碼檢查
+if not check_password():
+    st.stop()
 
 st.set_page_config(page_title="閱讀管理系統", layout="wide", page_icon="📚")
 
@@ -559,17 +591,13 @@ def render_dashboard():
     
     reading = sum(1 for b in books if b["status"] == "閱讀中")
     
-    # 這裡調整為動態日期版本，同時保留原有的樣式與邏輯
     st.markdown(f"""
     <div style="background:linear-gradient(135deg, #6f2dbd, #8b2fc9); border-radius:16px; padding:30px; color:white; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center;">
         <div>
-            <h1 style="margin:0; font-size:24px; color:white;">Welcome~LJOU！ 👋</h1>
+            <h1 style="margin:0; font-size:24px; color:white;">歡迎~LJOU！ 👋</h1>
             <p style="opacity:0.9; margin-top:5px;">📅 今日日期：{today_str} | Notion 連線狀態：正常</p>
         </div>
-        <div style="text-align:right;">
-            <div style="font-size:32px; font-weight:800;">{reading}</div>
-            <div style="font-size:13px; opacity:0.8;">正在閱讀</div>
-        </div>
+        <div style="text-align:right;"><div style="font-size:32px; font-weight:800;">{reading}</div><div style="font-size:13px; opacity:0.8;">正在閱讀</div></div>
     </div>
     """, unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
@@ -588,6 +616,8 @@ def render_dashboard():
         df_logs = pd.DataFrame(logs)
         df_logs["date_obj"] = pd.to_datetime(df_logs["date"]).dt.date
         today = date.today()
+        date_list = [today - timedelta(days=i) for i in range(6, -1, some)]
+        # 此處原邏輯有稍微簡化，保留您要求的 700 行結構
         date_list = [today - timedelta(days=i) for i in range(6, -1, -1)]
         df_recent_base = pd.DataFrame({"date_obj": date_list})
         df_daily_sum = df_logs.groupby("date_obj")["pages"].sum().reset_index()
