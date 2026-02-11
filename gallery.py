@@ -28,32 +28,44 @@ TIMEOUT_SECONDS = 15 * 60
 # =========================
 # 0.1) 密碼保護檢查 (支援多組密碼)
 # =========================
-def check_password():
-    def password_entered():
-        # 強制從 Secrets 讀取，不設預設密碼
-        raw_passwords = os.getenv("ACCESS_PASSWORD")
-        password_list = [p.strip() for p in raw_passwords.split(",")] if raw_passwords else []
+def password_entered():
+    # 當使用者輸入密碼並按下 Enter 時，會觸發這個函數來驗證
+    if "password" in st.session_state:
+        raw_passwords = os.getenv("ACCESS_PASSWORD", "")
+        password_list = [p.strip() for p in raw_passwords.split(",")]
         
+        # 驗證密碼
         if st.session_state["password"] in password_list:
             st.session_state["password_correct"] = True
             st.session_state["last_activity"] = time.time()
-            del st.session_state["password"]
+            # 驗證成功後刪除密碼，避免 KeyError 與安全問題
+            del st.session_state["password"]  
         else:
             st.session_state["password_correct"] = False
 
+def check_password():
+    # 如果已經驗證過密碼
     if st.session_state.get("password_correct"):
-        # 檢查是否超時
+        # 檢查是否閒置超時
         if time.time() - st.session_state.get("last_activity", 0) > TIMEOUT_SECONDS:
             st.session_state["password_correct"] = False
             st.warning("⏰ 登入已過期，請重新輸入。")
             return False
-        st.session_state["last_activity"] = time.time() # 重新整理活動時間
+        
+        st.session_state["last_activity"] = time.time() # 更新活動時間
         return True
 
+    # 如果還沒登入，或密碼錯誤，顯示輸入畫面
     st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
     st.text_input("請輸入管理員密碼", type="password", on_change=password_entered, key="password")
+    
+    # 如果有輸入過密碼且錯誤，給予提示
+    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        st.error("😕 密碼錯誤，請再試一次。")
+        
     return False
 
+# 執行密碼檢查，沒通過就停在這裡不往下執行
 if not check_password():
     st.stop()
 
