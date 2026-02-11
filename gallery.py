@@ -9,17 +9,16 @@ from dotenv import load_dotenv
 import streamlit as st
 from zoneinfo import ZoneInfo
 
-
 # =========================
-# ✅ 必須最先呼叫
+# ✅ 必須最先呼叫 set_page_config
 # =========================
 st.set_page_config(page_title="閱讀管理系統", layout="wide", page_icon="📚")
-
 
 # =========================
 # 0) 基本設定
 # =========================
 load_dotenv(override=True)
+
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "").strip()
 BOOK_DS_ID = os.getenv("NOTION_DATABASE_ID", "").strip()
 LOG_DS_ID = os.getenv("NOTION_LOG_ID", "").strip()
@@ -28,23 +27,20 @@ TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 today_str = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d")
 TIMEOUT_SECONDS = 15 * 60
 
-
 # =========================
-# 0.1) 密碼保護檢查（✅ 改成 form + submit，不用 callback）
+# 0.1) 密碼保護檢查（✅ 改成 form 提交，避免 callback rerun no-op）
 # =========================
 def check_password():
     # 已登入
     if st.session_state.get("password_correct", False):
-        # 超時登出
+        # 閒置超時登出
         if time.time() - st.session_state.get("last_activity", 0) > TIMEOUT_SECONDS:
             st.session_state["password_correct"] = False
             st.warning("⏰ 登入已過期，請重新輸入。")
             return False
-
         st.session_state["last_activity"] = time.time()
         return True
 
-    # 尚未登入：顯示登入表單
     st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
 
     with st.form("login_form", clear_on_submit=True):
@@ -59,22 +55,20 @@ def check_password():
             st.session_state["password_correct"] = True
             st.session_state["last_activity"] = time.time()
             st.success("✅ 登入成功")
-            st.rerun()  # ✅ 這裡不是 callback，所以會生效
+            st.rerun()
         else:
             st.session_state["password_correct"] = False
             st.error("😕 密碼錯誤，請再試一次。")
 
     return False
 
-
+# 執行密碼檢查，沒通過就停在這裡不往下執行
 if not check_password():
     st.stop()
-
 
 DEMO_MODE = False
 if not NOTION_TOKEN or not BOOK_DS_ID:
     DEMO_MODE = True
-
 
 # =========================
 # 1) 資料處理
@@ -104,7 +98,6 @@ TODO_NAME = "名稱"
 TODO_DONE = "是否完成"
 TODO_DUE = "截止日"
 
-
 def get_plain_text(props, key):
     try:
         p = props.get(key, {})
@@ -120,13 +113,11 @@ def get_plain_text(props, key):
     except:
         return ""
 
-
 def get_number(props, key):
     try:
         return props.get(key, {}).get("number", 0)
     except:
         return 0
-
 
 def get_checkbox(props, key):
     try:
@@ -134,13 +125,11 @@ def get_checkbox(props, key):
     except:
         return False
 
-
 def get_select(props, key):
     try:
         return props.get(key, {}).get("select", {}).get("name")
     except:
         return None
-
 
 def get_multi_select(props, key):
     try:
@@ -148,20 +137,17 @@ def get_multi_select(props, key):
     except:
         return []
 
-
 def get_date(props, key):
     try:
         return props.get(key, {}).get("date", {}).get("start")
     except:
         return None
 
-
 def get_url_prop(props, key):
     try:
         return props.get(key, {}).get("url")
     except:
         return None
-
 
 def get_cover(page_obj):
     try:
@@ -182,7 +168,6 @@ def get_cover(page_obj):
         return ""
     except:
         return ""
-
 
 def parse_book(p):
     props = p.get("properties", {})
@@ -205,7 +190,6 @@ def parse_book(p):
         "pdf": get_url_prop(props, PROP_PDF),
     }
 
-
 @st.cache_data(show_spinner=False, ttl=60)
 def fetch_books():
     if DEMO_MODE:
@@ -224,7 +208,6 @@ def fetch_books():
             return {"error": f"連線錯誤: {response.text}"}
     except Exception as e:
         return {"error": str(e)}
-
 
 @st.cache_data(show_spinner=False, ttl=10)
 def fetch_logs():
@@ -247,11 +230,17 @@ def fetch_logs():
                 p = get_number(props, LOG_PAGES)
                 m = get_number(props, LOG_MINS)
                 if d:
-                    logs.append({"id": r["id"], "date": d, "pages": p if p else 0, "mins": m if m else 0})
+                    logs.append(
+                        {
+                            "id": r["id"],
+                            "date": d,
+                            "pages": p if p else 0,
+                            "mins": m if m else 0,
+                        }
+                    )
         return logs
     except:
         return []
-
 
 def fetch_todos():
     if DEMO_MODE or not TODO_DS_ID:
@@ -266,7 +255,10 @@ def fetch_todos():
         response = requests.post(
             url,
             headers=headers,
-            json={"page_size": 100, "sorts": [{"timestamp": "created_time", "direction": "descending"}]},
+            json={
+                "page_size": 100,
+                "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+            },
         )
         todos = []
         if response.status_code == 200:
@@ -285,7 +277,6 @@ def fetch_todos():
     except:
         return []
 
-
 def add_todo_task(task_name, due_date=None):
     if DEMO_MODE or not TODO_DS_ID:
         return False, "未設定資料庫 ID"
@@ -296,19 +287,25 @@ def add_todo_task(task_name, due_date=None):
         "Content-Type": "application/json",
     }
 
-    props = {TODO_NAME: {"title": [{"text": {"content": task_name}}]}, TODO_DONE: {"checkbox": False}}
+    props = {
+        TODO_NAME: {"title": [{"text": {"content": task_name}}]},
+        TODO_DONE: {"checkbox": False},
+    }
     if due_date:
         props[TODO_DUE] = {"date": {"start": str(due_date)}}
 
     try:
-        response = requests.post(url, headers=headers, json={"parent": {"database_id": TODO_DS_ID}, "properties": props})
+        response = requests.post(
+            url,
+            headers=headers,
+            json={"parent": {"database_id": TODO_DS_ID}, "properties": props},
+        )
         if response.status_code == 200:
             return True, ""
         else:
             return False, response.text
     except Exception as e:
         return False, str(e)
-
 
 def mark_todo_done(page_id):
     if DEMO_MODE:
@@ -326,7 +323,6 @@ def mark_todo_done(page_id):
         return response.status_code == 200
     except:
         return False
-
 
 def add_log_to_notion(date_val, book_id, pages, mins):
     if DEMO_MODE or not LOG_DS_ID:
@@ -346,11 +342,14 @@ def add_log_to_notion(date_val, book_id, pages, mins):
         "名稱": {"title": [{"text": {"content": f"Log {str(date_val)}"}}]},
     }
     try:
-        response = requests.post(url, headers=headers, json={"parent": {"database_id": LOG_DS_ID}, "properties": props})
+        response = requests.post(
+            url,
+            headers=headers,
+            json={"parent": {"database_id": LOG_DS_ID}, "properties": props},
+        )
         return response.status_code == 200
     except:
         return False
-
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_database_schema():
@@ -381,7 +380,6 @@ def fetch_database_schema():
         return s_opts, c_opts, g_opts, t_opts
     except:
         return [], [], [], []
-
 
 def add_book_to_notion(data):
     if DEMO_MODE:
@@ -416,7 +414,11 @@ def add_book_to_notion(data):
 
     props = {k: v for k, v in props.items() if v is not None}
     try:
-        response = requests.post(url, headers=headers, json={"parent": {"database_id": BOOK_DS_ID}, "properties": props})
+        response = requests.post(
+            url,
+            headers=headers,
+            json={"parent": {"database_id": BOOK_DS_ID}, "properties": props},
+        )
         if response.status_code == 200:
             return True
         else:
@@ -426,11 +428,9 @@ def add_book_to_notion(data):
         st.error(f"連線失敗: {str(e)}")
         return False
 
-
 def refresh_data():
     st.cache_data.clear()
     st.rerun()
-
 
 books_data = fetch_books()
 error_message = None
@@ -446,7 +446,6 @@ opt_cat = schema_cat
 opt_gen = schema_gen
 opt_tag = schema_tags
 
-
 # =========================
 # 2) CSS 樣式 (RWD 增強版)
 # =========================
@@ -457,12 +456,13 @@ st.markdown(
 :root{ --bg:#f3f5f9; --purple:#6f2dbd; --text:#1e293b; --card:#ffffff; --green:#15803d; --orange:#ea580c; }
 html,body,.stApp{ font-family:'Noto Sans TC',sans-serif !important; color:var(--text); background-color:var(--bg); }
 
-.topbar{
-    position:fixed; top:0; left:0; right:0; height:64px;
-    background:var(--card);
-    padding:0 60px;
-    display:flex; justify-content:space-between; align-items:center;
-    box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); z-index:90;
+/* --- 桌面版預設樣式 --- */
+.topbar{ 
+    position:fixed; top:0; left:0; right:0; height:64px; 
+    background:var(--card); 
+    padding:0 60px; 
+    display:flex; justify-content:space-between; align-items:center; 
+    box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); z-index:90; 
 }
 .app-title{ font-size:20px; font-weight:900; color:var(--purple); display:flex; align-items:center; gap:8px; margin-left: 20px; }
 .breadcrumb { font-size: 16px; color: #64748b; display: block; }
@@ -483,6 +483,7 @@ section[data-testid="stSidebar"] { top: 64px !important; height: calc(100vh - 64
 .detail-label { font-size: 13px; color: #64748b; margin-bottom: 4px; }
 .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 12px; }
 .pdf-link { display: block; width: 100%; padding: 12px; background-color: #fef2f2; color: #b91c1c; text-align: center; border-radius: 8px; border: 1px solid #fecaca; text-decoration: none; font-weight: 700; transition: 0.2s; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 10px; }
 .cal-cell { min-height: 100px; height: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; justify-content: flex-start; background: #fff; transition: 0.2s; overflow: visible; }
 .cal-cell.today { border: 2px solid var(--purple); background: #fbf7ff; }
 .reading-block { background-color: var(--green); color: white; border-radius: 6px; padding: 4px; font-size: 12px; font-weight: 700; text-align: center; margin-top: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 100%; }
@@ -514,7 +515,6 @@ button[kind="primary"] { background-color: var(--purple) !important; color: whit
     unsafe_allow_html=True,
 )
 
-
 # =========================
 # 3) UI 元件
 # =========================
@@ -530,7 +530,6 @@ def render_topbar(title):
     """,
         unsafe_allow_html=True,
     )
-
 
 def render_sidebar():
     with st.sidebar:
@@ -555,7 +554,6 @@ def render_sidebar():
             st.error("連線異常")
         else:
             st.success("✅ Notion 已連線")
-
 
 # =========================
 # 4) 功能頁面
@@ -600,7 +598,6 @@ def entry_form():
                     st.success("新增成功")
                     time.sleep(1)
                     refresh_data()
-
 
 def render_todo():
     render_topbar("待辦清單")
@@ -656,7 +653,6 @@ def render_todo():
             for task in completed:
                 st.markdown(f'<div class="todo-item todo-done">{task["name"]}</div>', unsafe_allow_html=True)
 
-
 def render_timer():
     render_topbar("專注計時")
     st.markdown(
@@ -676,6 +672,7 @@ def render_timer():
                 total_mins = 15
             elif "自訂" in t_mode:
                 total_mins = st.number_input("設定分鐘數", min_value=1, max_value=120, value=25)
+
             total_secs = total_mins * 60
             if st.button("▶ 開始計時", type="primary", width="stretch"):
                 progress_bar = st.progress(0)
@@ -685,7 +682,7 @@ def render_timer():
                     mins, secs = divmod(i, 60)
                     time_str = f"{mins:02d}:{secs:02d}"
                     timer_text.markdown(f'<div class="timer-display">{time_str}</div>', unsafe_allow_html=True)
-                    progress = (total_secs - i) / total_secs
+                    progress = (total_secs - i) / total_secs if total_secs else 1
                     progress_bar.progress(progress)
                     status_text.caption("⏳ 專注中...請勿關閉視窗")
                     time.sleep(1)
@@ -693,7 +690,6 @@ def render_timer():
                 st.balloons()
             else:
                 st.markdown(f'<div class="timer-display">{total_mins:02d}:00</div>', unsafe_allow_html=True)
-
 
 def render_dashboard():
     render_topbar("儀表板")
@@ -748,8 +744,8 @@ def render_dashboard():
     if logs:
         df_logs = pd.DataFrame(logs)
         df_logs["date_obj"] = pd.to_datetime(df_logs["date"]).dt.date
-        today_val = date.today()
 
+        today_val = date.today()
         date_list = [today_val - timedelta(days=i) for i in range(6, -1, -1)]
         df_recent_base = pd.DataFrame({"date_obj": date_list})
         df_daily_sum = df_logs.groupby("date_obj")["pages"].sum().reset_index()
@@ -766,6 +762,7 @@ def render_dashboard():
                 y -= 1
             month_list.append(f"{y}-{m:02d}")
         month_list.reverse()
+
         df_monthly_base = pd.DataFrame({"月份": month_list})
         df_logs["月份"] = pd.to_datetime(df_logs["date_obj"]).dt.strftime("%Y-%m")
         df_monthly_sum = df_logs.groupby("月份")["pages"].sum().reset_index()
@@ -779,34 +776,47 @@ def render_dashboard():
     with row1_c1:
         st.markdown('<div class="chart-container"><div class="chart-title">📖 書籍分類佔比</div>', unsafe_allow_html=True)
         if not df_cat_count.empty:
-            pie = alt.Chart(df_cat_count).mark_arc(innerRadius=60, outerRadius=100).encode(
-                color=alt.Color("分類"), theta="數量", tooltip=["分類", "數量"]
+            pie = (
+                alt.Chart(df_cat_count)
+                .mark_arc(innerRadius=60, outerRadius=100)
+                .encode(color=alt.Color("分類"), theta="數量", tooltip=["分類", "數量"])
             )
-            st.altair_chart(pie.properties(height=300), use_container_width=True)
+            st.altair_chart(pie.properties(height=300), width="stretch")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with row1_c2:
         st.markdown('<div class="chart-container"><div class="chart-title">📅 近 7 天閱讀頁數</div>', unsafe_allow_html=True)
         if not df_recent.empty:
-            bar = alt.Chart(df_recent).mark_bar(color="#6f2dbd", width=20).encode(
-                x=alt.X("日期", sort=None), y="頁數", tooltip=["日期", "頁數"]
+            bar = (
+                alt.Chart(df_recent)
+                .mark_bar(color="#6f2dbd", width=20)
+                .encode(x=alt.X("日期", sort=None), y="頁數", tooltip=["日期", "頁數"])
             )
-            st.altair_chart(bar.properties(height=300), use_container_width=True)
+            st.altair_chart(bar.properties(height=300), width="stretch")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="chart-container"><div class="chart-title">📈 每月閱讀趨勢</div>', unsafe_allow_html=True)
     if not df_monthly.empty:
-        area = alt.Chart(df_monthly).mark_area(
-            line={"color": "#6f2dbd"},
-            color=alt.Gradient(
-                gradient="linear",
-                stops=[alt.GradientStop(color="#6f2dbd", offset=0), alt.GradientStop(color="white", offset=1)],
-                x1=1, x2=1, y1=1, y2=0,
-            ),
-        ).encode(x=alt.X("月份", sort=None), y="總頁數", tooltip=["月份", "總頁數"])
-        st.altair_chart(area.properties(height=300), use_container_width=True)
+        area = (
+            alt.Chart(df_monthly)
+            .mark_area(
+                line={"color": "#6f2dbd"},
+                color=alt.Gradient(
+                    gradient="linear",
+                    stops=[
+                        alt.GradientStop(color="#6f2dbd", offset=0),
+                        alt.GradientStop(color="white", offset=1),
+                    ],
+                    x1=1,
+                    x2=1,
+                    y1=1,
+                    y2=0,
+                ),
+            )
+            .encode(x=alt.X("月份", sort=None), y="總頁數", tooltip=["月份", "總頁數"])
+        )
+        st.altair_chart(area.properties(height=300), width="stretch")
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_library():
     render_topbar("書庫列表")
@@ -862,7 +872,6 @@ def render_library():
                     st.markdown(f'<div class="book-img-container"><img src="{book["cover"]}"></div>', unsafe_allow_html=True)
                 else:
                     st.markdown('<div class="book-img-container"><div style="text-align:center; padding-top:40px;">📖</div></div>', unsafe_allow_html=True)
-
                 st.markdown('<div class="book-btn">', unsafe_allow_html=True)
                 btn_label = book["category"] if book.get("category") else "未分類"
                 if st.button(btn_label, key=f"btn_{book['id']}", width="stretch"):
@@ -870,7 +879,6 @@ def render_library():
                     st.session_state.page = "book_detail"
                     st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_book_detail():
     book = st.session_state.get("selected_book")
@@ -880,7 +888,7 @@ def render_book_detail():
         return
 
     render_topbar("書籍詳情")
-    if st.button("← 返回書庫", width="stretch"):
+    if st.button("← 返回書庫", width="content"):
         st.session_state.page = "library"
         st.rerun()
 
@@ -897,10 +905,8 @@ def render_book_detail():
 
     with c2:
         st.markdown(f'<div style="font-size:32px; font-weight:900; color:#1e293b; margin-bottom:8px;">{book["title"]}</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="font-size:16px; font-weight:600; color:#1e293b; margin-bottom:20px;">{book["author"] or "未知作者"}</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div style="font-size:16px; font-weight:600; color:#1e293b; margin-bottom:20px;">{book["author"] or "未知作者"}</div>', unsafe_allow_html=True)
+
         st.markdown(
             f"""
         <div class="detail-card">
@@ -919,15 +925,20 @@ def render_book_detail():
 
         pdf_link = book.get("pdf")
         if pdf_link:
-            st.markdown(f"""<a href="{pdf_link}" target="_blank" class="pdf-link">📄 點擊查看 PDF 文件</a>""", unsafe_allow_html=True)
+            st.markdown(
+                f'''<div class="pdf-btn-container"><a href="{pdf_link}" target="_blank" class="pdf-link">📄 點擊查看 PDF 文件</a></div>''',
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown("""<div class="pdf-link disabled">📄 未提供 PDF 文件</div>""", unsafe_allow_html=True)
+            st.markdown(
+                '''<div class="pdf-btn-container"><a class="pdf-link disabled">📄 未提供 PDF 文件</a></div>''',
+                unsafe_allow_html=True,
+            )
 
         if book["summary"]:
             st.info(book["summary"])
         else:
             st.info("暫無簡介")
-
 
 def render_calendar():
     render_topbar("閱讀行事曆")
@@ -937,8 +948,8 @@ def render_calendar():
 
     logs = fetch_logs()
     todos = fetch_todos()
-
     log_map = {}
+
     for log in logs:
         d = log["date"]
         if d:
@@ -955,6 +966,7 @@ def render_calendar():
             log_map[d]["todos"].append(task["name"])
 
     c_cal, c_detail = st.columns([3, 1.2], gap="large")
+
     with c_cal:
         col_ctrl1, col_ctrl2, _ = st.columns([1, 1, 2])
         with col_ctrl1:
@@ -964,12 +976,14 @@ def render_calendar():
 
         cal = calendar.monthcalendar(curr_year, curr_month)
         st.write("")
+
         cols = st.columns(7)
         days = ["日", "一", "二", "三", "四", "五", "六"]
         for idx, d in enumerate(days):
             cols[idx].markdown(f"<div style='text-align:center; color:#64748b; font-weight:bold;'>{d}</div>", unsafe_allow_html=True)
 
         t_s = datetime.now().strftime("%Y-%m-%d")
+
         for week in cal:
             cols = st.columns(7)
             for idx, day in enumerate(week):
@@ -991,25 +1005,21 @@ def render_calendar():
         st.markdown("### 📅 選取日期")
         sel_date = st.date_input("日期", value=datetime.now())
         sel_date_str = sel_date.strftime("%Y-%m-%d")
+
         day_data = log_map.get(sel_date_str, {"pages": 0, "mins": 0, "todos": []})
 
         d1, d2 = st.columns(2)
         with d1:
-            st.markdown(
-                f"<div class='stat-box'><div class='stat-val'>{day_data['pages']}</div><div class='stat-label'>頁</div></div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"""<div class='stat-box'><div class='stat-val'>{day_data['pages']}</div><div class='stat-label'>頁</div></div>""", unsafe_allow_html=True)
         with d2:
-            st.markdown(
-                f"<div class='stat-box'><div class='stat-val'>{day_data['mins']}</div><div class='stat-label'>分鐘</div></div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"""<div class='stat-box'><div class='stat-val'>{day_data['mins']}</div><div class='stat-label'>分鐘</div></div>""", unsafe_allow_html=True)
 
         for t in day_data["todos"]:
             st.info(t)
 
         st.divider()
         st.markdown("#### 📝 新增閱讀紀錄")
+
         with st.form("add_log"):
             book_opts = {b["title"]: b["id"] for b in books}
             sel_book_name = st.selectbox("選擇書籍", list(book_opts.keys())) if book_opts else st.selectbox("選擇書籍", ["無書籍"])
@@ -1021,7 +1031,6 @@ def render_calendar():
                     st.success("已儲存")
                     time.sleep(1)
                     refresh_data()
-
 
 # =========================
 # 控制邏輯
