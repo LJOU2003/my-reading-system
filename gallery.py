@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 
 # =========================
-# ✅ 先設定頁面（必須是第一個 Streamlit 指令）
+# ✅ 必須最先呼叫
 # =========================
 st.set_page_config(page_title="閱讀管理系統", layout="wide", page_icon="📚")
 
@@ -25,55 +25,48 @@ BOOK_DS_ID = os.getenv("NOTION_DATABASE_ID", "").strip()
 LOG_DS_ID = os.getenv("NOTION_LOG_ID", "").strip()
 TODO_DS_ID = os.getenv("NOTION_TODO_ID", "").strip()
 
-# --- 新增：取得今日日期變數 ---
 today_str = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d")
 TIMEOUT_SECONDS = 15 * 60
 
 
 # =========================
-# 0.1) 密碼保護檢查 (支援多組密碼)
+# 0.1) 密碼保護檢查（✅ 改成 form + submit，不用 callback）
 # =========================
-def password_entered():
-    # 當使用者輸入密碼並按下 Enter 時，會觸發這個函數來驗證
-    if "password" in st.session_state:
-        raw_passwords = os.getenv("ACCESS_PASSWORD", "")
-        password_list = [p.strip() for p in raw_passwords.split(",") if p.strip()]
-
-        # 驗證密碼
-        if st.session_state["password"] in password_list:
-            st.session_state["password_correct"] = True
-            st.session_state["last_activity"] = time.time()
-            # 驗證成功後刪除密碼，避免 KeyError 與安全問題
-            del st.session_state["password"]
-            st.rerun()  # ✅ 強制刷新，避免登入後畫面沒更新
-        else:
-            st.session_state["password_correct"] = False
-
-
 def check_password():
-    # 如果已經驗證過密碼
-    if st.session_state.get("password_correct"):
-        # 檢查是否閒置超時
+    # 已登入
+    if st.session_state.get("password_correct", False):
+        # 超時登出
         if time.time() - st.session_state.get("last_activity", 0) > TIMEOUT_SECONDS:
             st.session_state["password_correct"] = False
             st.warning("⏰ 登入已過期，請重新輸入。")
             return False
 
-        st.session_state["last_activity"] = time.time()  # 更新活動時間
+        st.session_state["last_activity"] = time.time()
         return True
 
-    # 如果還沒登入，或密碼錯誤，顯示輸入畫面
+    # 尚未登入：顯示登入表單
     st.markdown("<h2 style='text-align:center;'>🔐 系統存取保護</h2>", unsafe_allow_html=True)
-    st.text_input("請輸入管理員密碼", type="password", on_change=password_entered, key="password")
 
-    # 如果有輸入過密碼且錯誤，給予提示
-    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("😕 密碼錯誤，請再試一次。")
+    with st.form("login_form", clear_on_submit=True):
+        pw = st.text_input("請輸入管理員密碼", type="password")
+        submitted = st.form_submit_button("登入", type="primary", width="stretch")
+
+    if submitted:
+        raw_passwords = os.getenv("ACCESS_PASSWORD", "")
+        password_list = [p.strip() for p in raw_passwords.split(",") if p.strip()]
+
+        if pw in password_list:
+            st.session_state["password_correct"] = True
+            st.session_state["last_activity"] = time.time()
+            st.success("✅ 登入成功")
+            st.rerun()  # ✅ 這裡不是 callback，所以會生效
+        else:
+            st.session_state["password_correct"] = False
+            st.error("😕 密碼錯誤，請再試一次。")
 
     return False
 
 
-# 執行密碼檢查，沒通過就停在這裡不往下執行
 if not check_password():
     st.stop()
 
@@ -464,7 +457,6 @@ st.markdown(
 :root{ --bg:#f3f5f9; --purple:#6f2dbd; --text:#1e293b; --card:#ffffff; --green:#15803d; --orange:#ea580c; }
 html,body,.stApp{ font-family:'Noto Sans TC',sans-serif !important; color:var(--text); background-color:var(--bg); }
 
-/* --- 桌面版預設樣式 --- */
 .topbar{
     position:fixed; top:0; left:0; right:0; height:64px;
     background:var(--card);
@@ -491,7 +483,6 @@ section[data-testid="stSidebar"] { top: 64px !important; height: calc(100vh - 64
 .detail-label { font-size: 13px; color: #64748b; margin-bottom: 4px; }
 .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 12px; }
 .pdf-link { display: block; width: 100%; padding: 12px; background-color: #fef2f2; color: #b91c1c; text-align: center; border-radius: 8px; border: 1px solid #fecaca; text-decoration: none; font-weight: 700; transition: 0.2s; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 10px; }
 .cal-cell { min-height: 100px; height: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; justify-content: flex-start; background: #fff; transition: 0.2s; overflow: visible; }
 .cal-cell.today { border: 2px solid var(--purple); background: #fbf7ff; }
 .reading-block { background-color: var(--green); color: white; border-radius: 6px; padding: 4px; font-size: 12px; font-weight: 700; text-align: center; margin-top: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 100%; }
@@ -544,19 +535,19 @@ def render_topbar(title):
 def render_sidebar():
     with st.sidebar:
         st.caption("導覽選單")
-        if st.button("📊 儀表板", use_container_width=True):
+        if st.button("📊 儀表板", width="stretch"):
             st.session_state.page = "dashboard"
             st.rerun()
-        if st.button("📚 書庫列表", use_container_width=True):
+        if st.button("📚 書庫列表", width="stretch"):
             st.session_state.page = "library"
             st.rerun()
-        if st.button("🗓️ 閱讀行事曆", use_container_width=True):
+        if st.button("🗓️ 閱讀行事曆", width="stretch"):
             st.session_state.page = "calendar"
             st.rerun()
-        if st.button("🍅 專注計時", use_container_width=True):
+        if st.button("🍅 專注計時", width="stretch"):
             st.session_state.page = "timer"
             st.rerun()
-        if st.button("✅ 待辦清單", use_container_width=True):
+        if st.button("✅ 待辦清單", width="stretch"):
             st.session_state.page = "todo"
             st.rerun()
         st.divider()
@@ -588,7 +579,7 @@ def entry_form():
         pdf_url = st.text_input("PDF 檔案連結 (URL)")
         summary = st.text_area("簡介")
         st.write("---")
-        if st.form_submit_button("確認新增", type="primary", use_container_width=True):
+        if st.form_submit_button("確認新增", type="primary", width="stretch"):
             if not title:
                 st.error("請輸入書名")
             else:
@@ -626,7 +617,7 @@ def render_todo():
         with c2:
             new_due = st.date_input("截止日", value=None, label_visibility="collapsed", help="選擇截止日期")
         with c3:
-            if st.button("＋ 新增", type="primary", use_container_width=True):
+            if st.button("＋ 新增", type="primary", width="stretch"):
                 if not TODO_DS_ID:
                     st.error("請檢查 .env 設定")
                 elif not new_task:
@@ -639,6 +630,7 @@ def render_todo():
                         st.rerun()
                     else:
                         st.error(f"失敗: {msg}")
+
     st.write("")
     todos = fetch_todos()
     pending = [t for t in todos if not t["done"]]
@@ -654,7 +646,7 @@ def render_todo():
                 due_h = f"<span class='todo-due-tag'>📅 {task['due_date']}</span>" if task["due_date"] else ""
                 st.markdown(f'<div class="todo-item" style="margin:0;"><div>{due_h}{task["name"]}</div></div>', unsafe_allow_html=True)
             with col_btn:
-                if st.button("完成", key=f"done_{task['id']}", use_container_width=True):
+                if st.button("完成", key=f"done_{task['id']}", width="stretch"):
                     mark_todo_done(task["id"])
                     st.rerun()
             st.write("")
@@ -685,7 +677,7 @@ def render_timer():
             elif "自訂" in t_mode:
                 total_mins = st.number_input("設定分鐘數", min_value=1, max_value=120, value=25)
             total_secs = total_mins * 60
-            if st.button("▶ 開始計時", type="primary", use_container_width=True):
+            if st.button("▶ 開始計時", type="primary", width="stretch"):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 timer_text = st.empty()
@@ -708,6 +700,7 @@ def render_dashboard():
     if error_message:
         st.error(f"⚠️ {error_message}")
         return
+
     todos = fetch_todos()
     pending_count = len([t for t in todos if not t["done"]])
     reading = sum(1 for b in books if b["status"] == "閱讀中")
@@ -724,6 +717,7 @@ def render_dashboard():
     """,
         unsafe_allow_html=True,
     )
+
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown(
@@ -743,6 +737,7 @@ def render_dashboard():
 
     st.write("")
     logs = fetch_logs()
+
     if books:
         df_cat = pd.DataFrame([b["category"] for b in books], columns=["分類"])
         df_cat_count = df_cat["分類"].value_counts().reset_index()
@@ -784,10 +779,8 @@ def render_dashboard():
     with row1_c1:
         st.markdown('<div class="chart-container"><div class="chart-title">📖 書籍分類佔比</div>', unsafe_allow_html=True)
         if not df_cat_count.empty:
-            pie = (
-                alt.Chart(df_cat_count)
-                .mark_arc(innerRadius=60, outerRadius=100)
-                .encode(color=alt.Color("分類"), theta="數量", tooltip=["分類", "數量"])
+            pie = alt.Chart(df_cat_count).mark_arc(innerRadius=60, outerRadius=100).encode(
+                color=alt.Color("分類"), theta="數量", tooltip=["分類", "數量"]
             )
             st.altair_chart(pie.properties(height=300), use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -803,24 +796,14 @@ def render_dashboard():
 
     st.markdown('<div class="chart-container"><div class="chart-title">📈 每月閱讀趨勢</div>', unsafe_allow_html=True)
     if not df_monthly.empty:
-        area = (
-            alt.Chart(df_monthly)
-            .mark_area(
-                line={"color": "#6f2dbd"},
-                color=alt.Gradient(
-                    gradient="linear",
-                    stops=[
-                        alt.GradientStop(color="#6f2dbd", offset=0),
-                        alt.GradientStop(color="white", offset=1),
-                    ],
-                    x1=1,
-                    x2=1,
-                    y1=1,
-                    y2=0,
-                ),
-            )
-            .encode(x=alt.X("月份", sort=None), y="總頁數", tooltip=["月份", "總頁數"])
-        )
+        area = alt.Chart(df_monthly).mark_area(
+            line={"color": "#6f2dbd"},
+            color=alt.Gradient(
+                gradient="linear",
+                stops=[alt.GradientStop(color="#6f2dbd", offset=0), alt.GradientStop(color="white", offset=1)],
+                x1=1, x2=1, y1=1, y2=0,
+            ),
+        ).encode(x=alt.X("月份", sort=None), y="總頁數", tooltip=["月份", "總頁數"])
         st.altair_chart(area.properties(height=300), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -830,11 +813,12 @@ def render_library():
     if error_message:
         st.error(f"⚠️ {error_message}")
         return
+
     c1, c2 = st.columns([6, 1.2])
     with c1:
         st.markdown(f"### 📚 我的書櫃 ({len(books)})")
     with c2:
-        if st.button("＋ 新增書籍", type="primary", use_container_width=True):
+        if st.button("＋ 新增書籍", type="primary", width="stretch"):
             entry_form()
 
     with st.container():
@@ -877,13 +861,11 @@ def render_library():
                 if book.get("cover"):
                     st.markdown(f'<div class="book-img-container"><img src="{book["cover"]}"></div>', unsafe_allow_html=True)
                 else:
-                    st.markdown(
-                        '<div class="book-img-container"><div style="text-align:center; padding-top:40px;">📖</div></div>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown('<div class="book-img-container"><div style="text-align:center; padding-top:40px;">📖</div></div>', unsafe_allow_html=True)
+
                 st.markdown('<div class="book-btn">', unsafe_allow_html=True)
                 btn_label = book["category"] if book.get("category") else "未分類"
-                if st.button(btn_label, key=f"btn_{book['id']}", use_container_width=True):
+                if st.button(btn_label, key=f"btn_{book['id']}", width="stretch"):
                     st.session_state.selected_book = book
                     st.session_state.page = "book_detail"
                     st.rerun()
@@ -898,7 +880,7 @@ def render_book_detail():
         return
 
     render_topbar("書籍詳情")
-    if st.button("← 返回書庫", type="secondary"):
+    if st.button("← 返回書庫", width="stretch"):
         st.session_state.page = "library"
         st.rerun()
 
@@ -937,12 +919,9 @@ def render_book_detail():
 
         pdf_link = book.get("pdf")
         if pdf_link:
-            st.markdown(
-                f"""<div class="pdf-btn-container"><a href="{pdf_link}" target="_blank" class="pdf-link">📄 點擊查看 PDF 文件</a></div>""",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"""<a href="{pdf_link}" target="_blank" class="pdf-link">📄 點擊查看 PDF 文件</a>""", unsafe_allow_html=True)
         else:
-            st.markdown("""<div class="pdf-btn-container"><a class="pdf-link disabled">📄 未提供 PDF 文件</a></div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="pdf-link disabled">📄 未提供 PDF 文件</div>""", unsafe_allow_html=True)
 
         if book["summary"]:
             st.info(book["summary"])
@@ -1037,7 +1016,7 @@ def render_calendar():
             l1, l2 = st.columns(2)
             in_pages = l1.number_input("閱讀頁數", min_value=0, step=1)
             in_mins = l2.number_input("閱讀分鐘", min_value=0, step=5)
-            if st.form_submit_button("＋ 新增紀錄", type="primary", use_container_width=True):
+            if st.form_submit_button("＋ 新增紀錄", type="primary", width="stretch"):
                 if book_opts and add_log_to_notion(sel_date, book_opts[sel_book_name], in_pages, in_mins):
                     st.success("已儲存")
                     time.sleep(1)
